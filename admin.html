@@ -115,6 +115,11 @@
   .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
   .empty { padding: 40px 16px; text-align: center; color: var(--muted); background: var(--surface); border: 1px dashed var(--line); border-radius: 12px; }
 
+  .consoles { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .cbtn { font-size: .8rem; font-weight: 700; padding: 2px 10px; border-radius: 6px; text-decoration: none; border: 1px solid var(--primary); color: var(--primary); }
+  a.cbtn:hover { background: var(--primary); color: var(--primary-ink); }
+  .cbtn.off { border-style: dashed; border-color: var(--line); color: var(--muted); font-weight: 400; }
+
   /* ダイアログ */
   dialog { width: min(520px, calc(100vw - 32px)); padding: 24px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
   dialog::backdrop { background: rgba(10, 16, 30, .55); }
@@ -145,6 +150,8 @@
     <input id="email" type="email" autocomplete="username" required>
     <label for="password">パスワード</label>
     <input id="password" type="password" autocomplete="current-password" required>
+    <label class="check" style="margin-top:14px;font-weight:400"><input id="remember" type="checkbox" checked> この端末でログイン状態を保つ</label>
+    <p class="hint" style="margin:4px 0 0">共有パソコンでは、チェックを外してください。</p>
     <p class="err" id="loginErr" role="alert"></p>
     <button class="btn primary" id="loginBtn" type="submit" style="width:100%;margin-top:6px">ログイン</button>
   </form>
@@ -169,7 +176,7 @@
       <input type="file" id="importFile" accept="application/json,.json" hidden>
       <span class="spacer note" id="count"></span>
     </div>
-    <p class="note">行をドラッグするか「↑」「↓」で並べ替えると、生徒画面の表示順に反映されます。点線の行は生徒には表示されません。</p>
+    <p class="note">行をドラッグするか「↑」「↓」で並べ替えると、生徒画面の表示順に反映されます。点線の行は生徒には表示されません。コンソールのURLは講師だけに見えます。</p>
     <ul class="list" id="list"></ul>
   </main>
 </section>
@@ -191,6 +198,10 @@
     <input id="fIcon" type="text" placeholder="📘">
     <label for="fTags">タグ <span class="hint">(カンマ区切り。検索に使われます)</span></label>
     <input id="fTags" type="text" placeholder="算数, 計算">
+    <label for="fAdminUrl">管理コンソールのURL <span class="hint">(講師だけに表示・任意)</span></label>
+    <input id="fAdminUrl" type="url" placeholder="https://">
+    <label for="fLessonUrl">授業コンソールのURL <span class="hint">(講師だけに表示・任意)</span></label>
+    <input id="fLessonUrl" type="url" placeholder="https://">
     <label class="check"><input id="fVisible" type="checkbox" checked> 生徒に表示する</label>
     <p class="err" id="formErr" role="alert"></p>
     <div class="dlg-actions">
@@ -219,9 +230,22 @@
     }));
     return;
   }
-  const sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+  // ログイン状態の保存先: 「この端末で保つ」ならlocalStorage、外すとタブを閉じるまで(sessionStorage)
+  const REMEMBER_KEY = "arc_admin_remember";
+  const EMAIL_KEY = "arc_admin_email";
+  const remembering = () => { try { return localStorage.getItem(REMEMBER_KEY) !== "0"; } catch (e) { return true; } };
+  const pickStore = () => (remembering() ? localStorage : sessionStorage);
+  const authStorage = {
+    getItem: k => { try { return pickStore().getItem(k); } catch (e) { return null; } },
+    setItem: (k, v) => { try { pickStore().setItem(k, v); } catch (e) { /* 保存できない環境 */ } },
+    removeItem: k => { try { localStorage.removeItem(k); sessionStorage.removeItem(k); } catch (e) { /* 何もしない */ } }
+  };
+  const sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
+    auth: { storage: authStorage, persistSession: true, autoRefreshToken: true }
+  });
 
   let apps = [];
+  let consoles = {}; // app_id -> { admin_url, lesson_url }
   let editingId = null;
   let dragIndex = null;
   let toastTimer = null;
@@ -270,6 +294,7 @@
     if (!session) {
       $("adminView").hidden = true;
       $("loginView").hidden = false;
+      ($("email").value ? $("password") : $("email")).focus();
       return;
     }
     const { data, error } = await sb.from("teachers").select("user_id").eq("user_id", session.user.id).maybeSingle();
@@ -290,6 +315,12 @@
     e.preventDefault();
     $("loginErr").textContent = "";
     $("loginBtn").disabled = true;
+    const keep = $("remember").checked;
+    try {
+      localStorage.setItem(REMEMBER_KEY, keep ? "1" : "0");
+      if (keep) localStorage.setItem(EMAIL_KEY, $("email").value.trim());
+      else localStorage.removeItem(EMAIL_KEY);
+    } catch (x) { /* 保存できない環境 */ }
     const { data, error } = await sb.auth.signInWithPassword({
       email: $("email").value.trim(),
       password: $("password").value
@@ -311,12 +342,33 @@
 
   /* ---------- データ読み込み・保存 ---------- */
   async function loadApps() {
-    const { data, error } = await sb.from("apps").select("*")
-      .order("sort_order", { ascending: true })
-      .order("created_at", { ascending: true });
-    if (error) { console.error(error); toast("読み込めませんでした。", true); return; }
-    apps = data || [];
+    const [a, c] = await Promise.all([
+      sb.from("apps").select("*")
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true }),
+      sb.from("app_consoles").select("*")
+    ]);
+    if (a.error) { console.error(a.error); toast("読み込めませんでした。", true); return; }
+    apps = a.data || [];
+    consoles = {};
+    if (c.error) {
+      console.error(c.error);
+      toast("コンソールURLを読み込めませんでした。add_consoles.sql を実行済みか確認してください。", true);
+    } else {
+      (c.data || []).forEach(r => { consoles[r.app_id] = r; });
+    }
     render();
+  }
+
+  async function saveConsoles(appId, adminUrl, lessonUrl) {
+    if (!adminUrl && !lessonUrl) {
+      const { error } = await sb.from("app_consoles").delete().eq("app_id", appId);
+      return error;
+    }
+    const { error } = await sb.from("app_consoles").upsert({
+      app_id: appId, admin_url: adminUrl || null, lesson_url: lessonUrl || null
+    });
+    return error;
   }
 
   async function saveOrder() {
@@ -378,6 +430,28 @@
     await saveOrder();
   }
 
+  function consoleLink(label, url) {
+    if (url) {
+      const a = document.createElement("a");
+      a.className = "cbtn";
+      a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer";
+      a.textContent = label + "を開く";
+      return a;
+    }
+    const s = document.createElement("span");
+    s.className = "cbtn off";
+    s.textContent = label + "(未設定)";
+    return s;
+  }
+
+  function consoleLinks(app) {
+    const c = consoles[app.id] || {};
+    const box = document.createElement("div");
+    box.className = "consoles";
+    box.append(consoleLink("管理コンソール", c.admin_url), consoleLink("授業コンソール", c.lesson_url));
+    return box;
+  }
+
   function rowNode(app, i) {
     const li = document.createElement("li");
     li.className = "row" + (app.visible ? "" : " hidden-app");
@@ -420,6 +494,7 @@
       c.className = "c"; c.textContent = app.category;
       info.append(c);
     }
+    info.append(consoleLinks(app));
 
     const acts = document.createElement("div");
     acts.className = "acts";
@@ -464,6 +539,9 @@
     $("fIcon").value = app ? app.icon : "";
     $("fTags").value = app ? (app.tags || []).join(", ") : "";
     $("fVisible").checked = app ? app.visible : true;
+    const cs = app ? (consoles[app.id] || {}) : {};
+    $("fAdminUrl").value = cs.admin_url || "";
+    $("fLessonUrl").value = cs.lesson_url || "";
     $("formErr").textContent = "";
     $("dlg").showModal();
     $("fName").focus();
@@ -489,6 +567,11 @@
       err.textContent = "アイコンの画像URLは https:// から始まる形式にしてください。"; return;
     }
 
+    const adminUrl = $("fAdminUrl").value.trim();
+    const lessonUrl = $("fLessonUrl").value.trim();
+    if (adminUrl && !validUrl(adminUrl)) { err.textContent = "管理コンソールのURLは https:// から始まる形式で入力してください。"; return; }
+    if (lessonUrl && !validUrl(lessonUrl)) { err.textContent = "授業コンソールのURLは https:// から始まる形式で入力してください。"; return; }
+
     const payload = {
       name, url,
       description: $("fDesc").value.trim(),
@@ -500,12 +583,16 @@
 
     $("saveBtn").disabled = true;
     let error;
+    let appId = editingId;
     if (editingId) {
       ({ error } = await sb.from("apps").update(payload).eq("id", editingId));
     } else {
       payload.sort_order = apps.length ? Math.max(...apps.map(a => a.sort_order)) + 1 : 0;
-      ({ error } = await sb.from("apps").insert(payload));
+      let row;
+      ({ data: row, error } = await sb.from("apps").insert(payload).select("id").single());
+      if (row) appId = row.id;
     }
+    if (!error) error = await saveConsoles(appId, adminUrl, lessonUrl);
     $("saveBtn").disabled = false;
 
     if (error) { console.error(error); err.textContent = "保存できませんでした。入力内容を確認してください。"; return; }
@@ -518,7 +605,9 @@
   $("exportBtn").addEventListener("click", () => {
     const out = apps.map(a => ({
       name: a.name, url: a.url, description: a.description, category: a.category,
-      icon: a.icon, tags: a.tags, visible: a.visible
+      icon: a.icon, tags: a.tags, visible: a.visible,
+      admin_url: (consoles[a.id] || {}).admin_url || "",
+      lesson_url: (consoles[a.id] || {}).lesson_url || ""
     }));
     const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
@@ -544,6 +633,7 @@
 
     const seen = new Set(apps.map(a => normalizeUrl(a.url)));
     const rows = [];
+    const extras = {}; // 正規化URL -> コンソールURL
     let skipped = 0;
     let order = apps.length ? Math.max(...apps.map(a => a.sort_order)) + 1 : 0;
 
@@ -554,6 +644,9 @@
       const iconOk = !/^[a-z][a-z0-9+.-]*:/i.test(icon) || /^https?:\/\//i.test(icon);
       if (!name || !validUrl(url) || !iconOk || seen.has(normalizeUrl(url))) { skipped++; continue; }
       seen.add(normalizeUrl(url));
+      const au = String(it.admin_url || "").trim();
+      const lu = String(it.lesson_url || "").trim();
+      extras[normalizeUrl(url)] = { admin: validUrl(au) ? au : "", lesson: validUrl(lu) ? lu : "" };
       rows.push({
         name, url, icon,
         description: String(it.description || "").trim().slice(0, 200),
@@ -567,13 +660,24 @@
     if (rows.length === 0) { toast("追加できるアプリがありませんでした(重複・不正な行は " + skipped + " 件)。", true); return; }
     if (!confirm(rows.length + " 件を追加します(重複・不正な行は " + skipped + " 件スキップ)。よろしいですか?")) return;
 
-    const { error } = await sb.from("apps").insert(rows);
+    const { data: inserted, error } = await sb.from("apps").insert(rows).select("id, url");
     if (error) { console.error(error); toast("読み込めませんでした。", true); return; }
+
+    const cRows = (inserted || []).map(r => {
+      const x = extras[normalizeUrl(r.url)] || {};
+      return (x.admin || x.lesson) ? { app_id: r.id, admin_url: x.admin || null, lesson_url: x.lesson || null } : null;
+    }).filter(Boolean);
+    let cErr = null;
+    if (cRows.length) ({ error: cErr } = await sb.from("app_consoles").upsert(cRows));
+
     await loadApps();
-    toast(rows.length + " 件を追加しました。");
+    if (cErr) { console.error(cErr); toast(rows.length + " 件を追加しましたが、コンソールURLは保存できませんでした。", true); }
+    else toast(rows.length + " 件を追加しました。");
   });
 
   /* ---------- 起動 ---------- */
+  $("remember").checked = remembering();
+  try { const saved = localStorage.getItem(EMAIL_KEY); if (saved) $("email").value = saved; } catch (e) { /* 何もしない */ }
   sb.auth.getSession().then(({ data }) => showForSession(data.session));
 })();
 </script>
