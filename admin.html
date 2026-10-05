@@ -120,6 +120,13 @@
   a.cbtn:hover { background: var(--primary); color: var(--primary-ink); }
   .cbtn.off { border-style: dashed; border-color: var(--line); color: var(--muted); font-weight: 400; }
 
+  details.memo { margin: 18px 0 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+  details.memo > summary { cursor: pointer; padding: 12px 16px; font-weight: 700; }
+  .memo-body { padding: 0 16px 16px; }
+  textarea { width: 100%; min-height: 110px; padding: 9px 12px; font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; resize: vertical; }
+  .memo-foot { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+  .memo-foot .note { margin: 0; }
+
   /* ダイアログ */
   dialog { width: min(520px, calc(100vw - 32px)); padding: 24px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
   dialog::backdrop { background: rgba(10, 16, 30, .55); }
@@ -169,6 +176,23 @@
   </div>
 
   <main class="wrap">
+    <details class="memo" id="memoBox">
+      <summary>自分用メモ(講師だけに表示)</summary>
+      <div class="memo-body">
+        <label for="mAccount">Supabase管理アカウント名</label>
+        <input id="mAccount" type="text" maxlength="200" autocomplete="off">
+        <label for="mMemo1">メモ1</label>
+        <textarea id="mMemo1" maxlength="5000" autocomplete="off"></textarea>
+        <label for="mMemo2">メモ2</label>
+        <textarea id="mMemo2" maxlength="5000" autocomplete="off"></textarea>
+        <p class="hint">パスワードやAPIキー(特に service_role キー)は書かないでください。</p>
+        <div class="memo-foot">
+          <button class="btn primary" id="memoSave" type="button">メモを保存</button>
+          <span class="note" id="memoStamp" role="status"></span>
+        </div>
+      </div>
+    </details>
+
     <div class="bar">
       <button class="btn primary" id="addBtn" type="button">アプリを追加</button>
       <button class="btn" id="exportBtn" type="button">JSONを書き出す</button>
@@ -246,6 +270,7 @@
 
   let apps = [];
   let consoles = {}; // app_id -> { admin_url, lesson_url }
+  let userId = null;
   let editingId = null;
   let dragIndex = null;
   let toastTimer = null;
@@ -292,6 +317,7 @@
   /* ---------- 認証 ---------- */
   async function showForSession(session) {
     if (!session) {
+      clearMemo();
       $("adminView").hidden = true;
       $("loginView").hidden = false;
       ($("email").value ? $("password") : $("email")).focus();
@@ -308,7 +334,8 @@
     $("who").textContent = session.user.email;
     $("loginView").hidden = true;
     $("adminView").hidden = false;
-    await loadApps();
+    userId = session.user.id;
+    await Promise.all([loadApps(), loadMemo()]);
   }
 
   $("loginForm").addEventListener("submit", async e => {
@@ -395,6 +422,45 @@
     render();
     toast("削除しました。");
   }
+
+  /* ---------- 自分用メモ ---------- */
+  function clearMemo() {
+    userId = null;
+    $("mAccount").value = "";
+    $("mMemo1").value = "";
+    $("mMemo2").value = "";
+    $("memoStamp").textContent = "";
+    $("memoBox").open = false;
+  }
+
+  async function loadMemo() {
+    const { data, error } = await sb.from("teacher_memo").select("*").eq("user_id", userId).maybeSingle();
+    if (error) {
+      console.error(error);
+      $("memoStamp").textContent = "メモを読み込めませんでした。add_memo.sql を実行済みか確認してください。";
+      return;
+    }
+    $("mAccount").value = data ? data.supabase_account : "";
+    $("mMemo1").value = data ? data.memo1 : "";
+    $("mMemo2").value = data ? data.memo2 : "";
+    $("memoStamp").textContent = data ? "最終保存: " + new Date(data.updated_at).toLocaleString("ja-JP") : "";
+  }
+
+  async function saveMemo() {
+    $("memoSave").disabled = true;
+    const { data, error } = await sb.from("teacher_memo").upsert({
+      user_id: userId,
+      supabase_account: $("mAccount").value.trim(),
+      memo1: $("mMemo1").value,
+      memo2: $("mMemo2").value
+    }).select().single();
+    $("memoSave").disabled = false;
+    if (error) { console.error(error); toast("メモを保存できませんでした。", true); return; }
+    $("memoStamp").textContent = "最終保存: " + new Date(data.updated_at).toLocaleString("ja-JP");
+    toast("メモを保存しました。");
+  }
+
+  $("memoSave").addEventListener("click", saveMemo);
 
   /* ---------- 一覧表示 ---------- */
   function iconNode(app) {
