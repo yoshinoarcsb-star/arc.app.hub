@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>arc.app.hub</title>
+<meta name="description" content="アプリの入口をひとまとめにしたページです。">
+<style>
+  :root {
+    --bg: #f1f4f9;
+    --surface: #ffffff;
+    --ink: #17233b;
+    --muted: #5d6b85;
+    --line: #d9e0ec;
+    --focus: #2d4ea2;
+    --c0: #2d4ea2; --c1: #1b8a86; --c2: #d98a1c; --c3: #d4574b; --c4: #7254c4; --c5: #4f8a2f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1626;
+      --surface: #182138;
+      --ink: #e8edf8;
+      --muted: #9aa8c4;
+      --line: #2a3654;
+      --focus: #8fa8ff;
+      --c0: #6f8fe8; --c1: #4cc0bb; --c2: #f0b04c; --c3: #f08a7e; --c4: #a58cf0; --c5: #8cc76b;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", Meiryo, sans-serif;
+    line-height: 1.7;
+  }
+  a { color: inherit; }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
+
+  header { padding: 40px 0 8px; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand-mark {
+    width: 34px; height: 40px; flex: none;
+    border-radius: 17px 17px 4px 4px;
+    background: var(--c0);
+  }
+  h1 { margin: 0; font-size: 1.9rem; letter-spacing: .01em; line-height: 1.2; }
+  .lead { margin: 10px 0 0; color: var(--muted); }
+
+  .tools { display: grid; gap: 14px; margin: 26px 0 22px; }
+  .search {
+    width: 100%; max-width: 420px;
+    padding: 11px 14px;
+    font: inherit; color: inherit;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+  .search::placeholder { color: var(--muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    font: inherit; font-size: .9rem; color: var(--ink);
+    padding: 6px 14px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+  .grid {
+    list-style: none; margin: 0; padding: 0 0 56px;
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  }
+  .card {
+    display: flex; gap: 16px; align-items: center;
+    height: 100%;
+    padding: 16px;
+    text-decoration: none;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    transition: border-color .15s, transform .15s;
+  }
+  .card:hover { border-color: var(--tone); transform: translateY(-2px); }
+  .arch {
+    flex: none;
+    width: 58px; height: 68px;
+    display: grid; place-items: center;
+    border-radius: 29px 29px 6px 6px;
+    background: var(--tone);
+    color: #fff;
+    font-size: 1.7rem; font-weight: 700;
+    overflow: hidden;
+  }
+  .arch img { width: 100%; height: 100%; object-fit: cover; }
+  .body { min-width: 0; }
+  .name { margin: 0; font-size: 1.05rem; font-weight: 700; line-height: 1.4; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .new { font-size: .72rem; font-weight: 700; color: #fff; background: var(--c3); padding: 0 8px; border-radius: 999px; line-height: 1.7; }
+  .desc { margin: 2px 0 0; font-size: .9rem; color: var(--muted); overflow-wrap: anywhere; }
+  .cat { margin: 4px 0 0; font-size: .8rem; font-weight: 700; color: var(--tone); }
+
+  .status { padding: 48px 0 80px; color: var(--muted); }
+  .status strong { display: block; color: var(--ink); font-size: 1.05rem; margin-bottom: 4px; }
+
+  footer { border-top: 1px solid var(--line); padding: 18px 0 32px; color: var(--muted); font-size: .85rem; }
+
+  @media (max-width: 420px) {
+    h1 { font-size: 1.6rem; }
+    .grid { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .card { transition: none; }
+    .card:hover { transform: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true"></div>
+      <h1>arc.app.hub</h1>
+    </div>
+    <p class="lead">使うアプリをここから開きます。</p>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="tools">
+    <input id="q" class="search" type="search" placeholder="アプリ名・説明・タグで探す" aria-label="アプリを検索">
+    <div id="chips" class="chips" role="group" aria-label="カテゴリで絞り込み"></div>
+  </div>
+  <div id="status" class="status" role="status">読み込み中です…</div>
+  <ul id="grid" class="grid" hidden></ul>
+</main>
+
+<footer>
+  <div class="wrap">アプリはクリックすると新しいタブで開きます。</div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  const NEW_DAYS = 14;
+  const ALL = "すべて";
+  const TONES = ["--c0", "--c1", "--c2", "--c3", "--c4", "--c5"];
+
+  const $q = document.getElementById("q");
+  const $chips = document.getElementById("chips");
+  const $grid = document.getElementById("grid");
+  const $status = document.getElementById("status");
+
+  let apps = [];
+  let category = ALL;
+  let query = "";
+
+  function toneOf(text) {
+    let h = 0;
+    for (const ch of text || "") h = (h * 31 + ch.codePointAt(0)) >>> 0;
+    return "var(" + TONES[h % TONES.length] + ")";
+  }
+
+  function isNew(app) {
+    return Date.now() - new Date(app.created_at).getTime() < NEW_DAYS * 86400000;
+  }
+
+  function showStatus(title, detail) {
+    $grid.hidden = true;
+    $status.hidden = false;
+    $status.replaceChildren();
+    const s = document.createElement("strong");
+    s.textContent = title;
+    $status.append(s);
+    if (detail) $status.append(detail);
+  }
+
+  function renderChips() {
+    const cats = [ALL, ...new Set(apps.map(a => a.category).filter(Boolean))];
+    $chips.replaceChildren();
+    $chips.hidden = cats.length <= 2;
+    for (const c of cats) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "chip";
+      b.textContent = c;
+      b.setAttribute("aria-pressed", String(c === category));
+      b.addEventListener("click", () => { category = c; renderChips(); renderGrid(); });
+      $chips.append(b);
+    }
+  }
+
+  function iconNode(app) {
+    const box = document.createElement("div");
+    box.className = "arch";
+    box.setAttribute("aria-hidden", "true");
+    if (/^https?:\/\//i.test(app.icon)) {
+      const img = document.createElement("img");
+      img.src = app.icon;
+      img.alt = "";
+      img.loading = "lazy";
+      img.addEventListener("error", () => { img.remove(); box.textContent = app.name.slice(0, 1); });
+      box.append(img);
+    } else {
+      box.textContent = app.icon || app.name.slice(0, 1);
+    }
+    return box;
+  }
+
+  function cardNode(app) {
+    const li = document.createElement("li");
+    const a = document.createElement("a");
+    a.className = "card";
+    a.href = app.url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.style.setProperty("--tone", toneOf(app.category || app.name));
+
+    const body = document.createElement("div");
+    body.className = "body";
+
+    const name = document.createElement("p");
+    name.className = "name";
+    name.append(document.createTextNode(app.name));
+    if (isNew(app)) {
+      const n = document.createElement("span");
+      n.className = "new";
+      n.textContent = "新着";
+      name.append(n);
+    }
+    body.append(name);
+
+    if (app.description) {
+      const d = document.createElement("p");
+      d.className = "desc";
+      d.textContent = app.description;
+      body.append(d);
+    }
+    if (app.category) {
+      const c = document.createElement("p");
+      c.className = "cat";
+      c.textContent = app.category;
+      body.append(c);
+    }
+
+    a.append(iconNode(app), body);
+    li.append(a);
+    return li;
+  }
+
+  function renderGrid() {
+    const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const list = apps.filter(a => {
+      if (category !== ALL && a.category !== category) return false;
+      const hay = [a.name, a.description, a.category, ...(a.tags || [])].join(" ").toLowerCase();
+      return words.every(w => hay.includes(w));
+    });
+
+    if (list.length === 0) {
+      if (apps.length === 0) showStatus("まだアプリが登録されていません。", document.createTextNode("講師が追加するとここに表示されます。"));
+      else showStatus("見つかりませんでした。", document.createTextNode("検索語やカテゴリを変えてみてください。"));
+      return;
+    }
+    $status.hidden = true;
+    $grid.hidden = false;
+    $grid.replaceChildren(...list.map(cardNode));
+  }
+
+  async function init() {
+    const cfg = window.ARC_CONFIG;
+    if (!cfg || !cfg.SUPABASE_URL || cfg.SUPABASE_URL.includes("xxxx")) {
+      showStatus("設定がまだ完了していません。", document.createTextNode("config.js に Supabase の URL と anon キーを入力してください。"));
+      return;
+    }
+    const sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+    const { data, error } = await sb
+      .from("apps")
+      .select("*")
+      .eq("visible", true)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error(error);
+      showStatus("読み込めませんでした。", document.createTextNode("時間をおいて、ページを再読み込みしてください。"));
+      return;
+    }
+    apps = data || [];
+    renderChips();
+    renderGrid();
+  }
+
+  $q.addEventListener("input", () => { query = $q.value; renderGrid(); });
+  init();
+})();
+</script>
+</body>
+</html>

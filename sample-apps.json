@@ -1,0 +1,29 @@
+[
+  {
+    "name": "計算ドリル",
+    "url": "https://example.com/drill",
+    "description": "四則演算を反復練習できます。",
+    "category": "算数",
+    "icon": "🧮",
+    "tags": ["計算", "ドリル"],
+    "visible": true
+  },
+  {
+    "name": "漢字クイズ",
+    "url": "https://example.com/kanji",
+    "description": "学年別の漢字を4択で確認します。",
+    "category": "国語",
+    "icon": "📖",
+    "tags": ["漢字", "クイズ"],
+    "visible": true
+  },
+  {
+    "name": "準備中のアプリ",
+    "url": "https://example.com/draft",
+    "description": "公開前のテスト用です。",
+    "category": "その他",
+    "icon": "",
+    "tags": [],
+    "visible": false
+  }
+]
